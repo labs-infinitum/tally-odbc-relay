@@ -49,40 +49,40 @@ fn execute_sql_impl(dsn: &str, sql: &str) -> Result<QueryResponse, OdbcError> {
     const BATCH_SIZE: usize = 256;
 
     let conn = connect(dsn)?;
-    match conn.execute(sql, (), None).map_err(odbc_err)? {
-        None => Ok(QueryResponse {
+    let executed = conn.execute(sql, (), None).map_err(odbc_err)?;
+    let Some(mut cursor) = executed else {
+        return Ok(QueryResponse {
             columns: Vec::new(),
             rows: Vec::new(),
-        }),
-        Some(mut cursor) => {
-            let columns = cursor
-                .column_names()
-                .map_err(odbc_err)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|err| OdbcError::Driver(err.to_string()))?;
+        });
+    };
 
-            let mut buffers =
-                TextRowSet::for_cursor(BATCH_SIZE, &mut cursor, Some(4096)).map_err(odbc_err)?;
-            let mut row_set = cursor.bind_buffer(&mut buffers).map_err(odbc_err)?;
-            let mut rows = Vec::new();
+    let columns = cursor
+        .column_names()
+        .map_err(odbc_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| OdbcError::Driver(err.to_string()))?;
 
-            while let Some(batch) = row_set.fetch().map_err(odbc_err)? {
-                for row_index in 0..batch.num_rows() {
-                    let row = (0..batch.num_cols())
-                        .map(|col_index| {
-                            std::string::String::from_utf8_lossy(
-                                batch.at(col_index, row_index).unwrap_or(&[]),
-                            )
-                            .into_owned()
-                        })
-                        .collect();
-                    rows.push(row);
-                }
-            }
+    let mut buffers =
+        TextRowSet::for_cursor(BATCH_SIZE, &mut cursor, Some(4096)).map_err(odbc_err)?;
+    let mut row_set = cursor.bind_buffer(&mut buffers).map_err(odbc_err)?;
+    let mut rows = Vec::new();
 
-            Ok(QueryResponse { columns, rows })
+    while let Some(batch) = row_set.fetch().map_err(odbc_err)? {
+        for row_index in 0..batch.num_rows() {
+            let row = (0..batch.num_cols())
+                .map(|col_index| {
+                    std::string::String::from_utf8_lossy(
+                        batch.at(col_index, row_index).unwrap_or(&[]),
+                    )
+                    .into_owned()
+                })
+                .collect();
+            rows.push(row);
         }
     }
+
+    Ok(QueryResponse { columns, rows })
 }
 
 #[cfg(windows)]
