@@ -26,7 +26,14 @@ pub fn execute_sql(dsn: &str, sql: &str) -> Result<QueryResponse, OdbcError> {
 #[cfg(windows)]
 fn connect(dsn: &str) -> Result<odbc_api::Connection<'static>, OdbcError> {
     let env = environment()?;
-    env.connect(dsn, "", "", odbc_api::ConnectionOptions::default())
+    // Tally's driver answers SQLDriverConnect (DSN=...;) but fails SQLConnect
+    // with an empty diagnostic, which is what Environment::connect uses.
+    let conn_str = if dsn.contains('=') {
+        dsn.to_string()
+    } else {
+        format!("DSN={dsn};")
+    };
+    env.connect_with_connection_string(&conn_str, odbc_api::ConnectionOptions::default())
         .map_err(odbc_err)
 }
 
