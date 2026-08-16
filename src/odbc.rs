@@ -51,9 +51,7 @@ fn environment() -> Result<&'static odbc_api::Environment, OdbcError> {
 
 #[cfg(windows)]
 fn execute_sql_impl(dsn: &str, sql: &str) -> Result<QueryResponse, OdbcError> {
-    use odbc_api::{buffers::TextRowSet, Cursor, ResultSetMetadata};
-
-    const BATCH_SIZE: usize = 256;
+    use odbc_api::{Cursor, ResultSetMetadata};
 
     let conn = connect(dsn)?;
     let executed = conn.execute(sql, (), None).map_err(odbc_err)?;
@@ -69,24 +67,25 @@ fn execute_sql_impl(dsn: &str, sql: &str) -> Result<QueryResponse, OdbcError> {
         .map_err(odbc_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| OdbcError::Driver(err.to_string()))?;
+    let col_count =
+        u16::try_from(columns.len()).map_err(|err| OdbcError::Driver(err.to_string()))?;
 
-    let mut buffers =
-        TextRowSet::for_cursor(BATCH_SIZE, &mut cursor, Some(4096)).map_err(odbc_err)?;
-    let mut row_set = cursor.bind_buffer(&mut buffers).map_err(odbc_err)?;
+    // Row-by-row SQLGetData (wide). Tally's 64-bit driver reports 32-bit SQLLEN
+    // in bound buffers, which panics odbc-api's TextRowSet.
     let mut rows = Vec::new();
-
-    while let Some(batch) = row_set.fetch().map_err(odbc_err)? {
-        for row_index in 0..batch.num_rows() {
-            let row = (0..batch.num_cols())
-                .map(|col_index| {
-                    std::string::String::from_utf8_lossy(
-                        batch.at(col_index, row_index).unwrap_or(&[]),
-                    )
-                    .into_owned()
-                })
-                .collect();
-            rows.push(row);
+    let mut text_buf = Vec::new();
+    while let Some(mut row) = cursor.next_row().map_err(odbc_err)? {
+        let mut values = Vec::with_capacity(columns.len());
+        for col in 1..=col_count {
+            text_buf.clear();
+            let present = row.get_wide_text(col, &mut text_buf).map_err(odbc_err)?;
+            values.push(if present {
+                String::from_utf16_lossy(&text_buf)
+            } else {
+                String::new()
+            });
         }
+        rows.push(values);
     }
 
     Ok(QueryResponse { columns, rows })
