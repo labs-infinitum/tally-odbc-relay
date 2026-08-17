@@ -96,68 +96,36 @@ Flags and environment variables:
 
 ## Fresh CrossOver Tally install (macOS)
 
-Wine’s ODBC manager only `LoadLibrary`s a Windows driver whose path ends in **`.dll`**. A stock Tally install registers `TallyWin.Dat`, so ODBC clients inside CrossOver fail until you add a `.dll` copy and point the DSN at it. The relay does **not** do this automatically.
+Wine’s ODBC manager only `LoadLibrary`s a Windows driver whose path ends in **`.dll`**. A stock Tally install registers `TallyWin.Dat`. On startup the relay copies that file to a sibling `TallyWin.dll` (if needed) and points the ODBC driver and DSN at the `.dll`. Tally can rewrite the registry back to `.Dat` after a restart; the next relay start fixes it again.
 
 ### 1. Install Tally in a CrossOver bottle
 
 Create a bottle (for example `Tally Prime`), install TallyPrime, enable **ODBC Server** on port `9000`, and load a company.
 
-### 2. Copy the driver to a `.dll` name
+### 2. Run the relay inside that bottle
 
-In the bottle (PowerShell / `cmd` / CrossOver wine):
-
-```bat
-copy "C:\Program Files\TallyPrime\TallyWin.Dat" "C:\Program Files\TallyPrime\TallyWin.dll"
-```
-
-Leave `TallyWin.Dat` in place. Tally still uses it; Wine needs the `.dll` suffix.
-
-Tally may rewrite the ODBC driver registry back to `TallyWin.Dat` (for example after a restart or ODBC re-register). If `SQLDriverConnect` starts failing with return code `5` and empty diagnostics, re-run the `reg add` steps below.
-
-If Tally lives under `TallyPrimeEL` or another folder, use that path instead.
-
-### 3. Point the ODBC driver and DSN at the `.dll`
-
-From the Mac host, using CrossOver’s `wine` (bottle name must match):
+Copy `tally-odbc-relay.exe` into the bottle (for example `C:\tmp\`) and start it with CrossOver’s `wine` (bottle name must match):
 
 ```bash
 WINE="/Users/$USER/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine"
 BOTTLE="Tally Prime"
 
-"$WINE" --bottle "$BOTTLE" --no-gui --wait reg add \
-  "HKLM\Software\ODBC\ODBCINST.INI\Tally ODBC Driver64" \
-  /v Driver /t REG_SZ /d "C:\Program Files\TallyPrime\TallyWin.dll" /f
-
-"$WINE" --bottle "$BOTTLE" --no-gui --wait reg add \
-  "HKLM\Software\ODBC\ODBC.INI\TallyODBC64_9000" \
-  /v driver /t REG_SZ /d "C:\Program Files\TallyPrime\TallyWin.dll" /f
-```
-
-Or inside the bottle:
-
-```bat
-reg add "HKLM\Software\ODBC\ODBCINST.INI\Tally ODBC Driver64" /v Driver /t REG_SZ /d "C:\Program Files\TallyPrime\TallyWin.dll" /f
-reg add "HKLM\Software\ODBC\ODBC.INI\TallyODBC64_9000" /v driver /t REG_SZ /d "C:\Program Files\TallyPrime\TallyWin.dll" /f
-```
-
-### 4. Run the relay inside that bottle
-
-Copy `tally-odbc-relay.exe` into the bottle (for example `C:\tmp\`) and start it with the same `wine` binary:
-
-```bash
 "$WINE" --bottle "$BOTTLE" --no-gui --wait \
   'C:\tmp\tally-odbc-relay.exe'
 ```
 
-You should see:
+You should see something like:
 
 ```
+prepared Wine-compatible ODBC driver at C:\Program Files\TallyPrime\TallyWin.dll
 tally-odbc-relay listening on http://127.0.0.1:9001 (DSN=TallyODBC64_9000)
 ```
 
+The first line is omitted if the `.dll` is already registered. Leave `TallyWin.Dat` in place; Tally still uses it. If Tally lives under `TallyPrimeEL` or another folder, the relay follows the registered driver path.
+
 Keep this process running. Port `9001` is published on the Mac loopback the same way Tally’s `9000` is.
 
-### 5. Query from the Mac host
+### 3. Query from the Mac host
 
 ```bash
 curl -sS http://127.0.0.1:9001/health
@@ -171,9 +139,8 @@ curl -sS http://127.0.0.1:9001/query \
 
 - [ ] Tally is running in the bottle and a company is loaded
 - [ ] `Enable ODBC Server=Yes` and `ServerPort=9000` in `tally.ini`
-- [ ] `TallyWin.dll` exists next to `TallyWin.Dat`
-- [ ] Registry `Driver` / DSN `driver` values end in `TallyWin.dll` (not `TallyWin.Dat`)
 - [ ] `tally-odbc-relay.exe` is running **in that bottle**, not as a native macOS process
+- [ ] The relay printed a prepared-driver line, or `TallyWin.dll` already exists next to `TallyWin.Dat`
 - [ ] `curl http://127.0.0.1:9001/health` returns `{"ok":true}`
 
 Do not use Wine’s ADO/`cscript` path (`DSN=(null)`). This exe calls `SQLDriverConnect` / `SQLExecDirect` directly.

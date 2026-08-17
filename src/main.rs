@@ -27,6 +27,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    match tally_odbc_relay::driver::ensure_dll_driver(&args.dsn) {
+        Ok(Some(msg)) => println!("{msg}"),
+        Ok(None) => {}
+        Err(err) => eprintln!("warning: could not prepare Tally ODBC driver: {err}"),
+    }
     let addr: SocketAddr = format!("{}:{}", args.bind, args.port).parse()?;
     let listener = TcpListener::bind(addr).await?;
     println!(
