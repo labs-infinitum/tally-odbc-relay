@@ -16,11 +16,28 @@ impl OdbcError {
 }
 
 pub fn ping_dsn(dsn: &str) -> Result<(), OdbcError> {
-    connect(dsn).map(|_| ())
+    catch_odbc(|| connect(dsn).map(|_| ()))
 }
 
 pub fn execute_sql(dsn: &str, sql: &str) -> Result<QueryResponse, OdbcError> {
-    execute_sql_impl(dsn, sql)
+    catch_odbc(|| execute_sql_impl(dsn, sql))
+}
+
+fn catch_odbc<T>(f: impl FnOnce() -> Result<T, OdbcError>) -> Result<T, OdbcError> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(payload) => Err(OdbcError::Driver(panic_message(payload))),
+    }
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(msg) = payload.downcast_ref::<&str>() {
+        format!("ODBC driver panic: {msg}")
+    } else if let Some(msg) = payload.downcast_ref::<String>() {
+        format!("ODBC driver panic: {msg}")
+    } else {
+        "ODBC driver panic".into()
+    }
 }
 
 #[cfg(windows)]

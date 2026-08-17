@@ -112,6 +112,8 @@ copy "C:\Program Files\TallyPrime\TallyWin.Dat" "C:\Program Files\TallyPrime\Tal
 
 Leave `TallyWin.Dat` in place. Tally still uses it; Wine needs the `.dll` suffix.
 
+Tally may rewrite the ODBC driver registry back to `TallyWin.Dat` (for example after a restart or ODBC re-register). If `SQLDriverConnect` starts failing with return code `5` and empty diagnostics, re-run the `reg add` steps below.
+
 If Tally lives under `TallyPrimeEL` or another folder, use that path instead.
 
 ### 3. Point the ODBC driver and DSN at the `.dll`
@@ -170,7 +172,7 @@ curl -sS http://127.0.0.1:9001/query \
 - [ ] Tally is running in the bottle and a company is loaded
 - [ ] `Enable ODBC Server=Yes` and `ServerPort=9000` in `tally.ini`
 - [ ] `TallyWin.dll` exists next to `TallyWin.Dat`
-- [ ] Registry `Driver` / DSN `driver` values end in `TallyWin.dll`
+- [ ] Registry `Driver` / DSN `driver` values end in `TallyWin.dll` (not `TallyWin.Dat`)
 - [ ] `tally-odbc-relay.exe` is running **in that bottle**, not as a native macOS process
 - [ ] `curl http://127.0.0.1:9001/health` returns `{"ok":true}`
 
